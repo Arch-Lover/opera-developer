@@ -20,7 +20,7 @@ jobs:
       uses: addnab/docker-run-action@v3
       with:
         image: archlinux:latest
-        options: --user root
+        options: --user MojArch
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel git wget
