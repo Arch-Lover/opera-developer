@@ -22,8 +22,8 @@ jobs:
         image: archlinux:latest
         options: --user root
         run: |
-          useradd -m MojArch
-          su - MojArch
+          useradd -m mojarch
+          su - mojarch
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel git wget
           git clone https://aur.archlinux.org/opera-developer.git
