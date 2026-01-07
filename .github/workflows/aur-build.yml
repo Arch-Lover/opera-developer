@@ -14,19 +14,24 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
-    - name: Set up Arch Linux Docker container
+    - name: Build in Arch Linux container
       uses: addnab/docker-run-action@v3
       with:
         image: archlinux:latest
-        options: --user root
+        options: --volume ${{ github.workspace }}:/repo --workdir /repo
         run: |
-          sudo useradd -m -G wheel mojarch
-          sudo sed -i '/^#.*%wheel.*NOPASSWD.*ALL/s/^#//' /etc/sudoers
-          su - mojarch
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git wget
-          git clone https://aur.archlinux.org/opera-developer.git
-          cd opera-developer
-          sudo -u mojarch "makepkg -si"
+          pacman -S --noconfirm base-devel git sudo wget
+
+          # Create non-root builder user
+          useradd -m -G wheel mojarch
+          echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+
+          # Run the build as mojarch (adjust if your PKGBUILD is in a subdir)
+          su - mojarch -c "
+            cd /repo
+            makepkg -si --noconfirm
+          "
+
