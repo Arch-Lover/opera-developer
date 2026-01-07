@@ -22,7 +22,11 @@ jobs:
         image: archlinux:latest
         options: --user root
         run: |
-          useradd -m mojarch
+          sudo useradd -m -G wheel "mojarch"
+          sudo sed -i '/^#.*%wheel.*NOPASSWD.*ALL/s/^#//' /etc/sudoers
+
+    - name: setting up for build
+        run: |
           su - mojarch
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel git wget
