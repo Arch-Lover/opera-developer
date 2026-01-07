@@ -22,7 +22,7 @@ jobs:
         image: archlinux:latest
         options: --user root
         run: |
-          sudo useradd -m -G wheel "mojarch"
+          sudo useradd -m -G wheel mojarch
           sudo sed -i '/^#.*%wheel.*NOPASSWD.*ALL/s/^#//' /etc/sudoers
           su - mojarch
           pacman -Syu --noconfirm
