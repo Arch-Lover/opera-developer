@@ -1,0 +1,31 @@
+name: Build AUR Package
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up Arch Linux Docker container
+      uses: addnab/docker-run-action@v3
+      with:
+        image: archlinux:latest
+        options: --user root
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git wget
+          git clone https://aur.archlinux.org/paru.git
+          cd paru
+          makepkg -si --noconfirm
+          paru -S opera-developer --noconfirm
+
