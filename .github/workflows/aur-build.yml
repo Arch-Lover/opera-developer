@@ -20,7 +20,7 @@ jobs:
       uses: addnab/docker-run-action@v3
       with:
         image: archlinux:latest
-        options: --volume ${{ github.workspace }}:/repo --workdir /repo
+        options: --volume ${{ github.workspace }}:/src --workdir /src
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel git sudo wget
@@ -29,9 +29,15 @@ jobs:
           useradd -m -G wheel mojarch
           echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
-          # Run the build as mojarch (adjust if your PKGBUILD is in a subdir)
+          # Copy source to user's home (ensures correct ownership)
+          sudo -u mojarch cp -r /src /home/mojarch/build
+          sudo -u mojarch chmod -R u+w /home/mojarch/build
+
+          # Build as mojarch, forcing BUILDDIR to a safe location
           su - mojarch -c "
-            cd /repo
-            makepkg -si --noconfirm
+            cd /home/mojarch/build
+            BUILDDIR=/home/mojarch/build-dir makepkg -si --noconfirm
           "
 
+          # Optional: clean up sudoers
+          sed -i '/%wheel ALL=(ALL) NOPASSWD: ALL/d' /etc/sudoers
