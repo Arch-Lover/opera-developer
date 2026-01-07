@@ -24,8 +24,6 @@ jobs:
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel git wget
-          git clone https://aur.archlinux.org/paru.git
-          cd paru
+          git clone https://aur.archlinux.org/opera-developer.git
+          cd opera-developer
           makepkg -si --noconfirm
-          paru -S opera-developer --noconfirm
-
