@@ -28,4 +28,4 @@ jobs:
           pacman -S --noconfirm base-devel git wget
           git clone https://aur.archlinux.org/opera-developer.git
           cd opera-developer
-          sudo -u mojarch makepkg -si --noconfirm
+          sudo -u mojarch "makepkg -si --noconfirm"
