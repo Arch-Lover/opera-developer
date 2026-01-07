@@ -1,13 +1,16 @@
 # Maintainer: MojArch
 pkgname=opera-developer
-pkgver=125.0.5720.0  # ← Change this when updating
-pkgrel=1           # ← Reset to 1 when bumping pkgver
-pkgdesc='A fast and secure web browser and Internet suite - developer stream'
+pkgver=126.0.5748.0
+pkgrel=1
+pkgdesc='Fast, secure, easy-to-use web browser
+ Opera is a fast, secure, and user-friendly web browser.
+ It includes a built-in ad blocker, Video pop-out, and free VPN.(Developer Stream)'
 arch=('x86_64')
 url='https://www.opera.com/computer'
 license=('custom:opera')
 provides=('opera-developer')
 depends=(
+    'qt5-base'
     'gtk3'
     'alsa-lib'
     'libnotify'
@@ -19,13 +22,18 @@ depends=(
     'shared-mime-info'
     'hicolor-icon-theme'
     'upower'
+    'cups'
+    'at-spi2-core'
+    'dbus'
+    'libxkbcommon'
+    'egl-gbm'
 )
 optdepends=(
     'opera-developer-ffmpeg-codecs'
+    'cairo'
 )
-# No need to maintain sha256sums manually anymore
 
-# Base URL construction
+# Base URL
 _baseurl="https://get.geo.opera.com/pub/${pkgname}/${pkgver}/linux"
 _debfile="${pkgname}_${pkgver}_amd64.deb"
 
@@ -34,12 +42,11 @@ source=(
     "opera"
     "default"
 )
-# Integrity checks: a sha256sums array where the first entry is fetched dynamically
-# (some makepkg versions/platforms prefer an array over a function)
+# dynamic Integrity checks
 sha256sums=(
-    "$(curl -s "${_baseurl}/${_debfile}.sha256sum" | awk -v f="${_debfile}" '$0 ~ f {print $1; found=1; exit} {h=$1} END { if (!found) print h }')"
-    "508512464e24126fddfb2c41a1e2e86624bdb0c0748084b6a922573b6cf6b9c5"  # opera wrapper
-    "99fc0d2822edd14e234d451995db47148125e4580221a292598959421d131231"  # default config
+    "7c850d439f3d24cd9989293e03f952d48352d6d3307a69cd55c31c68aec99e9d"
+    "508512464e24126fddfb2c41a1e2e86624bdb0c0748084b6a922573b6cf6b9c5"
+    "99fc0d2822edd14e234d451995db47148125e4580221a292598959421d131231"
 )
 
 prepare() {
