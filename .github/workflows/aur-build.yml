@@ -1,43 +1,147 @@
-name: Build AUR Package
+name: Build and publish AUR package
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - PKGBUILD
+      - opera
+      - default
+      - .github/workflows/aur-build.yml
   pull_request:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - PKGBUILD
+      - opera
+      - default
+      - .github/workflows/aur-build.yml
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the successfully built package recipe to the AUR
+        required: true
+        default: false
+        type: boolean
+
+# The workflow only needs to read this GitHub repository. AUR publishing uses
+# the dedicated SSH key stored in AUR_SSH_PRIVATE_KEY, never GITHUB_TOKEN.
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Validate and build in Arch Linux
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
-    - name: Build in Arch Linux container
-      uses: addnab/docker-run-action@v3
-      with:
-        image: archlinux:latest
-        options: --volume ${{ github.workspace }}:/src --workdir /src
+      - name: Build package in a clean Arch Linux container
+        shell: bash
         run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git sudo wget
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/package-output"
+          mkdir -p "$output_dir"
 
-          # Create non-root builder user
-          useradd -m -G wheel mojarch
-          echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/src:ro" \
+            --volume "$output_dir:/out" \
+            archlinux:latest \
+            bash -euo pipefail -c '
+              pacman -Syu --noconfirm
+              pacman -S --needed --noconfirm base-devel git sudo
 
-          # Copy source to user's home (ensures correct ownership)
-          sudo -u mojarch cp -r /src /home/mojarch/build
-          sudo -u mojarch chmod -R u+w /home/mojarch/build
+              useradd --create-home builder
+              install -d -o builder -g builder /build
+              cp -a /src/. /build/
+              chown -R builder:builder /build
 
-          # Build as mojarch, forcing BUILDDIR to a safe location
-          su - mojarch -c "
-            cd /home/mojarch/build
-            BUILDDIR=/home/mojarch/build-dir makepkg -si --noconfirm
-          "
+              runuser -u builder -- bash -c "cd /build && makepkg --syncdeps --noconfirm --cleanbuild"
+              runuser -u builder -- bash -c "cd /build && makepkg --printsrcinfo > .SRCINFO"
 
-          # Optional: clean up sudoers
-          sed -i '/%wheel ALL=(ALL) NOPASSWD: ALL/d' /etc/sudoers
+              mkdir -p /out/aur
+              cp /build/PKGBUILD /build/opera /build/default /build/.SRCINFO /out/aur/
+              find /build -maxdepth 1 -type f -name "*.pkg.tar.*" ! -name "*.sig" -exec cp {} /out/ \;
+            '
+
+      - name: Upload built package
+        uses: actions/upload-artifact@v4
+        with:
+          name: opera-developer-package
+          path: ${{ runner.temp }}/package-output/*.pkg.tar.*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload AUR source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-source-bundle
+          path: ${{ runner.temp }}/package-output/aur
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-aur:
+    name: Publish package recipe to AUR
+    needs: build
+    # Pushes to main are published automatically. Manual runs default to a
+    # build-only check and publish only when the checkbox is selected.
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-latest
+    environment: aur-production
+    env:
+      AUR_PACKAGE: ${{ vars.AUR_PACKAGE || 'opera-developer' }}
+      AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME || 'GitHub Actions' }}
+      AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL || 'actions@users.noreply.github.com' }}
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+
+    steps:
+      - name: Check AUR credentials are configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$AUR_SSH_PRIVATE_KEY" || {
+            echo 'Missing required AUR_SSH_PRIVATE_KEY GitHub secret.' >&2
+            exit 1
+          }
+
+      - name: Download generated AUR files
+        uses: actions/download-artifact@v4
+        with:
+          name: aur-source-bundle
+          path: aur-source-bundle
+
+      - name: Configure SSH for the AUR
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
+
+      - name: Update the AUR repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          aur_dir="$RUNNER_TEMP/aur-repository"
+          git clone "ssh://aur@aur.archlinux.org/${AUR_PACKAGE}.git" "$aur_dir"
+
+          rm -rf "$aur_dir"/* "$aur_dir"/.SRCINFO
+          cp aur-source-bundle/PKGBUILD aur-source-bundle/opera \
+            aur-source-bundle/default aur-source-bundle/.SRCINFO "$aur_dir"/
+
+          cd "$aur_dir"
+          git config user.name "$AUR_GIT_NAME"
+          git config user.email "$AUR_GIT_EMAIL"
+          git add PKGBUILD opera default .SRCINFO
+
+          if git diff --cached --quiet; then
+            echo 'AUR already contains these package sources; nothing to publish.'
+            exit 0
+          fi
+
+          git commit -m "Update to $(sed -n 's/^pkgver=//p' PKGBUILD | head -n1)-$(sed -n 's/^pkgrel=//p' PKGBUILD | head -n1)"
+          git push origin HEAD:master
