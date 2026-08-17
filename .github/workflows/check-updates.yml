@@ -105,7 +105,8 @@ jobs:
 
           awk -v sums="$(<"$output_dir/sha256sums")" '
             /^sha256sums=\(/ { print sums; skip = 1; next }
-            skip && /^\)/ { skip = 0; next }
+            # The final checksum and closing parenthesis share one line.
+            skip && /\)[[:space:]]*$/ { skip = 0; next }
             !skip { print }
           ' PKGBUILD > PKGBUILD.updated
           mv PKGBUILD.updated PKGBUILD
@@ -128,7 +129,11 @@ jobs:
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git checkout -b "$branch"
+          # A previous run may already have created this automation branch.
+          # Fetching first lets --force-with-lease safely replace only that
+          # bot-owned branch with the regenerated package recipe.
+          git fetch origin "$branch" || true
+          git checkout -B "$branch"
           git add PKGBUILD
           git commit -m "Update Opera Developer to $OPERA_LATEST"
           git push --force-with-lease origin "$branch"
