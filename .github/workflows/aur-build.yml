@@ -53,6 +53,11 @@ jobs:
               pacman -S --needed --noconfirm base-devel git sudo
 
               useradd --create-home builder
+              # makepkg --syncdeps installs missing package dependencies through
+              # sudo. This permission exists only inside this disposable
+              # container and is limited to pacman.
+              printf "builder ALL=(ALL) NOPASSWD: /usr/bin/pacman\\n" > /etc/sudoers.d/builder
+              chmod 440 /etc/sudoers.d/builder
               install -d -o builder -g builder /build
               cp -a /src/. /build/
               chown -R builder:builder /build
