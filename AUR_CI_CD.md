@@ -62,9 +62,9 @@ the archive remains available from the workflow run's artifacts for seven days.
 
 ## Upstream version checks
 
-`.github/workflows/check-updates.yml` runs daily at 06:20 UTC and can also be
-started manually. It checks Opera's Developer download index and the NW.js
-FFmpeg project's latest GitHub release against `pkgver` and
+`.github/workflows/check-updates.yml` is started manually from the **Actions**
+tab. It checks Opera's Developer download index and the NW.js FFmpeg project's
+latest GitHub release against `pkgver` and
 `_nwjs_ffmpeg_version` in `PKGBUILD`.
 
 When an update is found, it creates an update pull request with refreshed

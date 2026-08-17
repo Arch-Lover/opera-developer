@@ -1,9 +1,6 @@
 name: Check upstream versions
 
 on:
-  schedule:
-    # Daily at 06:20 UTC. Scheduled workflows run from the default branch.
-    - cron: '20 6 * * *'
   workflow_dispatch:
 
 permissions:
