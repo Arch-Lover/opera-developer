@@ -42,6 +42,12 @@ Keep `AUR_SSH_PRIVATE_KEY` in Secrets, never Variables or tracked files. The
 workflow retrieves AUR sources over SSH as `aur@aur.archlinux.org`, which is
 the AUR Git endpoint.
 
+The secret must contain the complete **private** key, including its
+`-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`
+lines. Do not paste the `.pub` file, a public key beginning with `ssh-ed25519`,
+or surrounding quotes. Register the matching public key with the AUR account
+that owns (or is a co-maintainer of) the package.
+
 ## Release workflow
 
 1. Update `pkgver`, source URL/checksums, and (when needed) the NW.js FFmpeg

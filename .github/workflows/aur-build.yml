@@ -83,6 +83,9 @@ jobs:
         with:
           name: aur-source-bundle
           path: ${{ runner.temp }}/package-output/aur
+          # .SRCINFO is required by the AUR and upload-artifact excludes
+          # dotfiles unless this is explicitly enabled.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
 
@@ -123,8 +126,16 @@ jobs:
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          # GitHub Secrets can retain CRLF when a key was copied on Windows.
+          # OpenSSH/OpenSSL rejects that form, so normalize it while preserving
+          # the key's required final newline.
+          printf '%s' "$AUR_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          printf '\n' >> ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null || {
+            echo 'AUR_SSH_PRIVATE_KEY is not a valid OpenSSH private key.' >&2
+            exit 1
+          }
           ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
 
       - name: Update the AUR repository
