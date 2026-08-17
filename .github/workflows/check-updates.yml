@@ -82,6 +82,21 @@ jobs:
           title='Upstream update available: Opera Developer / FFmpeg'
           body="$RUNNER_TEMP/upstream-update.md"
 
+          # GitHub can occasionally return a transient 503 for issue API
+          # requests. Retry those calls before treating the check as failed.
+          retry_gh() {
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if gh "$@"; then
+                return 0
+              fi
+              if [[ "$attempt" == 5 ]]; then
+                return 1
+              fi
+              sleep "$((attempt * 5))"
+            done
+          }
+
           cat > "$body" <<EOF
           An upstream version check found an update. Review compatibility and
           checksums before changing the package recipe.
@@ -94,9 +109,9 @@ jobs:
           Sources: [Opera Developer download index](https://get.opera.com/pub/opera-developer/) and [NW.js FFmpeg releases](https://github.com/nwjs-ffmpeg-prebuilt/nwjs-ffmpeg-prebuilt/releases).
           EOF
 
-          issue_number="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')"
+          issue_number="$(retry_gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')"
           if [[ -n "$issue_number" ]]; then
-            gh issue edit "$issue_number" --body-file "$body"
+            retry_gh issue edit "$issue_number" --body-file "$body"
           else
-            gh issue create --title "$title" --body-file "$body"
+            retry_gh issue create --title "$title" --body-file "$body"
           fi
