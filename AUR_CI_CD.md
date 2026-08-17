@@ -53,3 +53,16 @@ the AUR Git endpoint.
 
 The AUR receives source recipes rather than the built `.pkg.tar.*` archive;
 the archive remains available from the workflow run's artifacts for seven days.
+
+## Upstream version checks
+
+`.github/workflows/check-updates.yml` runs daily at 06:20 UTC and can also be
+started manually. It checks Opera's Developer download index and the NW.js
+FFmpeg project's latest GitHub release against `pkgver` and
+`_nwjs_ffmpeg_version` in `PKGBUILD`.
+
+When an update is found, it creates one GitHub issue titled **Upstream update
+available: Opera Developer / FFmpeg**, or refreshes that issue if it is already
+open. It deliberately does not update `PKGBUILD` or publish to AUR: the Opera
+version, matching FFmpeg build, URLs, and SHA-256 checksums need review before
+release.

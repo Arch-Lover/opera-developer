@@ -1,0 +1,102 @@
+name: Check upstream versions
+
+on:
+  schedule:
+    # Daily at 06:20 UTC. Scheduled workflows run from the default branch.
+    - cron: '20 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out package recipe
+        uses: actions/checkout@v4
+
+      - name: Compare packaged and upstream versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          opera_current="$(sed -n 's/^pkgver=//p' PKGBUILD)"
+          ffmpeg_current="$(sed -n 's/^_nwjs_ffmpeg_version=//p' PKGBUILD)"
+
+          opera_latest="$({
+            curl --fail --location --retry 3 --silent --show-error \
+              https://get.opera.com/pub/opera-developer/ |
+              grep -oE 'href="[0-9]+(\.[0-9]+){3}/"' |
+              sed -E 's/^href="|\/"$//g' |
+              sort -V |
+              tail -n1
+          })"
+
+          ffmpeg_latest="$({
+            curl --fail --location --retry 3 --silent --show-error \
+              https://api.github.com/repos/nwjs-ffmpeg-prebuilt/nwjs-ffmpeg-prebuilt/releases/latest |
+              jq --raw-output '.tag_name' |
+              sed 's/^v//'
+          })"
+
+          version_pattern='^[0-9]+(\.[0-9]+){2,3}$'
+          [[ "$opera_current" =~ $version_pattern && "$opera_latest" =~ $version_pattern ]] || {
+            echo 'Could not determine a valid Opera version.' >&2
+            exit 1
+          }
+          [[ "$ffmpeg_current" =~ $version_pattern && "$ffmpeg_latest" =~ $version_pattern ]] || {
+            echo 'Could not determine a valid NW.js FFmpeg version.' >&2
+            exit 1
+          }
+
+          {
+            echo "opera_current=$opera_current"
+            echo "opera_latest=$opera_latest"
+            echo "ffmpeg_current=$ffmpeg_current"
+            echo "ffmpeg_latest=$ffmpeg_latest"
+            if [[ "$opera_current" != "$opera_latest" || "$ffmpeg_current" != "$ffmpeg_latest" ]]; then
+              echo 'updates_available=true'
+            else
+              echo 'updates_available=false'
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Packaged Opera: $opera_current; upstream Opera: $opera_latest"
+          echo "Packaged FFmpeg: $ffmpeg_current; upstream FFmpeg: $ffmpeg_latest"
+
+      - name: Create or update an upstream-update issue
+        if: steps.versions.outputs.updates_available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERA_CURRENT: ${{ steps.versions.outputs.opera_current }}
+          OPERA_LATEST: ${{ steps.versions.outputs.opera_latest }}
+          FFMPEG_CURRENT: ${{ steps.versions.outputs.ffmpeg_current }}
+          FFMPEG_LATEST: ${{ steps.versions.outputs.ffmpeg_latest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title='Upstream update available: Opera Developer / FFmpeg'
+          body="$RUNNER_TEMP/upstream-update.md"
+
+          cat > "$body" <<EOF
+          An upstream version check found an update. Review compatibility and
+          checksums before changing the package recipe.
+
+          | Component | Packaged | Latest upstream |
+          | --- | --- | --- |
+          | Opera Developer | \`$OPERA_CURRENT\` | \`$OPERA_LATEST\` |
+          | NW.js FFmpeg | \`$FFMPEG_CURRENT\` | \`$FFMPEG_LATEST\` |
+
+          Sources: [Opera Developer download index](https://get.opera.com/pub/opera-developer/) and [NW.js FFmpeg releases](https://github.com/nwjs-ffmpeg-prebuilt/nwjs-ffmpeg-prebuilt/releases).
+          EOF
+
+          issue_number="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')"
+          if [[ -n "$issue_number" ]]; then
+            gh issue edit "$issue_number" --body-file "$body"
+          else
+            gh issue create --title "$title" --body-file "$body"
+          fi
