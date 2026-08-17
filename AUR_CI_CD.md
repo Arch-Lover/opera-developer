@@ -67,8 +67,7 @@ started manually. It checks Opera's Developer download index and the NW.js
 FFmpeg project's latest GitHub release against `pkgver` and
 `_nwjs_ffmpeg_version` in `PKGBUILD`.
 
-When an update is found, it creates one GitHub issue titled **Upstream update
-available: Opera Developer / FFmpeg**, or refreshes that issue if it is already
-open. It deliberately does not update `PKGBUILD` or publish to AUR: the Opera
-version, matching FFmpeg build, URLs, and SHA-256 checksums need review before
-release.
+When an update is found, it creates an update pull request with refreshed
+versions and source checksums. Review the FFmpeg compatibility, approve, and
+merge that pull request. It never merges the pull request or publishes to AUR;
+only the subsequent `main` workflow can do that.

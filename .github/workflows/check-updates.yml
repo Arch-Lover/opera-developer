@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  issues: write
+  contents: write
+  pull-requests: write
 
 jobs:
   check:
@@ -68,10 +68,9 @@ jobs:
           echo "Packaged Opera: $opera_current; upstream Opera: $opera_latest"
           echo "Packaged FFmpeg: $ffmpeg_current; upstream FFmpeg: $ffmpeg_latest"
 
-      - name: Create or update an upstream-update issue
+      - name: Generate updated package metadata
         if: steps.versions.outputs.updates_available == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           OPERA_CURRENT: ${{ steps.versions.outputs.opera_current }}
           OPERA_LATEST: ${{ steps.versions.outputs.opera_latest }}
           FFMPEG_CURRENT: ${{ steps.versions.outputs.ffmpeg_current }}
@@ -79,39 +78,61 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          title='Upstream update available: Opera Developer / FFmpeg'
-          body="$RUNNER_TEMP/upstream-update.md"
-
-          # GitHub can occasionally return a transient 503 for issue API
-          # requests. Retry those calls before treating the check as failed.
-          retry_gh() {
-            local attempt
-            for attempt in 1 2 3 4 5; do
-              if gh "$@"; then
-                return 0
-              fi
-              if [[ "$attempt" == 5 ]]; then
-                return 1
-              fi
-              sleep "$((attempt * 5))"
-            done
-          }
-
-          cat > "$body" <<EOF
-          An upstream version check found an update. Review compatibility and
-          checksums before changing the package recipe.
-
-          | Component | Packaged | Latest upstream |
-          | --- | --- | --- |
-          | Opera Developer | \`$OPERA_CURRENT\` | \`$OPERA_LATEST\` |
-          | NW.js FFmpeg | \`$FFMPEG_CURRENT\` | \`$FFMPEG_LATEST\` |
-
-          Sources: [Opera Developer download index](https://get.opera.com/pub/opera-developer/) and [NW.js FFmpeg releases](https://github.com/nwjs-ffmpeg-prebuilt/nwjs-ffmpeg-prebuilt/releases).
-          EOF
-
-          issue_number="$(retry_gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')"
-          if [[ -n "$issue_number" ]]; then
-            retry_gh issue edit "$issue_number" --body-file "$body"
+          if [[ "$OPERA_CURRENT" != "$OPERA_LATEST" ]]; then
+            pkgrel=1
           else
-            retry_gh issue create --title "$title" --body-file "$body"
+            pkgrel="$(( $(sed -n 's/^pkgrel=//p' PKGBUILD) + 1 ))"
           fi
+
+          sed -i -E \
+            -e "s/^pkgver=.*/pkgver=$OPERA_LATEST/" \
+            -e "s/^pkgrel=.*/pkgrel=$pkgrel/" \
+            -e "s/^_nwjs_ffmpeg_version=.*/_nwjs_ffmpeg_version=$FFMPEG_LATEST/" \
+            PKGBUILD
+
+          output_dir="$RUNNER_TEMP/checksums"
+          mkdir -p "$output_dir"
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/source:ro" \
+            --volume "$output_dir:/out" \
+            archlinux:latest bash -euo pipefail -c '
+              pacman -Syu --noconfirm
+              useradd --create-home builder
+              cp -a /source/. /build
+              chown -R builder:builder /build
+              runuser -u builder -- bash -c "cd /build && makepkg -g" > /out/sha256sums
+            '
+
+          awk -v sums="$(<"$output_dir/sha256sums")" '
+            /^sha256sums=\(/ { print sums; skip = 1; next }
+            skip && /^\)/ { skip = 0; next }
+            !skip { print }
+          ' PKGBUILD > PKGBUILD.updated
+          mv PKGBUILD.updated PKGBUILD
+
+      - name: Create or update the approval pull request
+        if: steps.versions.outputs.updates_available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERA_LATEST: ${{ steps.versions.outputs.opera_latest }}
+          FFMPEG_LATEST: ${{ steps.versions.outputs.ffmpeg_latest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="automation/upstream-${OPERA_LATEST}-${FFMPEG_LATEST}"
+          existing_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')"
+          if [[ -n "$existing_pr" ]]; then
+            echo "Approval pull request #$existing_pr is already open."
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$branch"
+          git add PKGBUILD
+          git commit -m "Update Opera Developer to $OPERA_LATEST"
+          git push --force-with-lease origin "$branch"
+
+          title="Update Opera Developer to $OPERA_LATEST"
+          gh pr create --base main --head "$branch" --title "$title" --body \
+            "Automated upstream update. Source checksums were regenerated. Review FFmpeg compatibility before approving and merging."
