@@ -1,75 +1,221 @@
 # Maintainer: MojArch
+
 pkgname=opera-developer
-pkgver=126.0.5748.0
+pkgver=136.0.5981.0
 pkgrel=1
-pkgdesc='Fast, secure, easy-to-use web browser
- Opera is a fast, secure, and user-friendly web browser.
- It includes a built-in ad blocker, Video pop-out, and free VPN.(Developer Stream)'
+pkgdesc='Fast, secure, easy-to-use web browser (Developer Stream)'
 arch=('x86_64')
 url='https://www.opera.com/computer'
-license=('custom:opera')
-provides=('opera-developer')
-depends=(
-    'qt5-base'
-    'gtk3'
-    'alsa-lib'
-    'libnotify'
-    'curl'
-    'nss'
-    'libxss'
-    'ttf-font'
-    'desktop-file-utils'
-    'shared-mime-info'
-    'hicolor-icon-theme'
-    'upower'
-    'cups'
-    'at-spi2-core'
-    'dbus'
-    'libxkbcommon'
-    'egl-gbm'
+license=('LicenseRef-opera')
+options=(!strip !debug !zipman)
+backup=('etc/opera-developer/default')
+provides=(
+    'opera-developer-browser'
 )
-optdepends=(
-    'opera-developer-ffmpeg-codecs'
-    'cairo'
+conflicts=(
+    'opera-developer-ffmpeg-codecs-bin'
+)
+replaces=(
+    'opera-developer-ffmpeg-codecs-bin'
 )
 
-# Base URL
-_baseurl="https://get.geo.opera.com/pub/${pkgname}/${pkgver}/linux"
-_debfile="${pkgname}_${pkgver}_amd64.deb"
+depends=(
+    'alsa-lib'
+    'at-spi2-core'
+    'cairo'
+    'cups'
+    'curl'
+    'dbus'
+    'expat'
+    'gcc-libs'
+    'glib2'
+    'glibc'
+    'gtk3'
+    'hicolor-icon-theme'
+    'libnotify'
+    'libx11'
+    'libxcb'
+    'libxcomposite'
+    'libxdamage'
+    'libxext'
+    'libxfixes'
+    'libxkbcommon'
+    'libxrandr'
+    'libxss'
+    'mesa'
+    'nspr'
+    'nss'
+    'pango'
+    'systemd-libs'
+    'ttf-font'
+    'xdg-utils'
+)
+
+optdepends=(
+    'qt5-base: Qt5 integration'
+    'qt6-base: Qt6 integration'
+    'egl-gbm'
+    'upower'
+)
+
+_nwjs_ffmpeg_version=0.114.1
+_upstream_deb_pkg='opera-developer'
+_debfile="${_upstream_deb_pkg}_${pkgver}_amd64.deb"
+_deburl="https://get.opera.com/pub/opera-developer/${pkgver}/linux/${_debfile}"
+_ffmpeg_zip="${_nwjs_ffmpeg_version}-linux-x64.zip"
 
 source=(
-    "${_baseurl}/${_debfile}"
+    "${_deburl}"
     "opera"
     "default"
-)
-# dynamic Integrity checks
-sha256sums=(
-    "7c850d439f3d24cd9989293e03f952d48352d6d3307a69cd55c31c68aec99e9d"
-    "89c75750f39118b6950c0fac443d819fb362d692a3333b110ebd2ea8993e3b46"
-    "552c27b5df37600339d4ab5fdb66fe64d1c38bdb6a34c112aa9088abfef36ada"
+    "nwjs-ffmpeg-${_ffmpeg_zip}::https://github.com/nwjs-ffmpeg-prebuilt/nwjs-ffmpeg-prebuilt/releases/download/${_nwjs_ffmpeg_version}/${_ffmpeg_zip}"
 )
 
+sha256sums=('fe8888cf7cca3fab58a367dfde071aa172116f79524530a5e60d240feb3838d9'
+            '508512464e24126fddfb2c41a1e2e86624bdb0c0748084b6a922573b6cf6b9c5'
+            '99fc0d2822edd14e234d451995db47148125e4580221a292598959421d131231'
+            '08aceb9b2f3c3e7435333b40162c6aeae4f3aa280e2fc5b4597dddaa849f64e6')
+
 prepare() {
-    sed -e "s/%pkgname%/$pkgname/g" \
-        -e "s/%operabin%/$pkgname\/$pkgname/g" \
+    sed -e 's|%pkgname%|opera-developer|g' \
+        -e 's|%operabin%|opera-developer/opera-developer|g' \
         -i "$srcdir/opera"
+
+    sed -e 's|%pkgname%|opera-developer|g' \
+        -i "$srcdir/default"
 }
 
 package() {
-    tar -xf data.tar.xz --exclude=usr/share/{lintian,menu} -C "$pkgdir/"
+    cd "$srcdir"
 
-    local libdir="$pkgdir/usr/lib/"
-    mv "$libdir/"*-linux-gnu/$pkgname "$libdir"
-    rm -rf "$libdir/"*-linux-gnu
+# Extract upstream package
 
-    chmod 4755 "$pkgdir/usr/lib/$pkgname/opera_sandbox"
+    bsdtar -xf "$_debfile"
 
-    install -Dm644 "$srcdir/default" "$pkgdir/etc/$pkgname/default"
+    bsdtar -xf data.tar.xz \
+        --exclude='usr/share/lintian' \
+        --exclude='usr/share/menu' \
+        -C "$pkgdir"
 
-    rm -f "$pkgdir/usr/bin/$pkgname"
-    install -Dm755 "$srcdir/opera" "$pkgdir/usr/bin/$pkgname"
+# Normalize multiarch library layout
 
-    install -Dm644 \
-        "$pkgdir/usr/share/doc/$pkgname/copyright" \
-        "$pkgdir/usr/share/licenses/$pkgname/copyright"
+    local libroot="$pkgdir/usr/lib"
+
+    local multiarch_dir
+    multiarch_dir="$(find "$libroot" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -type d \
+        -name '*-linux-gnu' \
+        | head -n1)"
+
+    if [[ -z "$multiarch_dir" ]]; then
+        echo 'ERROR: multiarch library directory not found'
+        return 1
+    fi
+
+    local upstream_libdir
+    upstream_libdir="$(find "$multiarch_dir" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -type d \
+        -name 'opera-developer' \
+        | head -n1)"
+
+    if [[ -z "$upstream_libdir" ]]; then
+        echo 'ERROR: upstream Opera payload directory not found'
+        return 1
+    fi
+
+    rm -rf "$libroot/opera-developer"
+    mv "$upstream_libdir" \
+        "$libroot/opera-developer"
+    rm -rf "$multiarch_dir"
+
+# Replace FFmpeg
+
+    bsdtar -xf "nwjs-ffmpeg-${_ffmpeg_zip}"
+
+    local ffmpeg_so
+    ffmpeg_so="$(find "$srcdir" \
+        -type f \
+        -name 'libffmpeg.so' \
+        | head -n1)"
+
+    if [[ -z "$ffmpeg_so" ]]; then
+        echo "ERROR: libffmpeg.so not found in $_ffmpeg_zip"
+        return 1
+    fi
+
+    rm -f "$pkgdir/usr/lib/opera-developer/libffmpeg.so"
+
+    install -Dm755 "$ffmpeg_so" \
+        "$pkgdir/usr/lib/opera-developer/libffmpeg.so"
+
+# Sandbox
+
+    if [[ -f "$pkgdir/usr/lib/opera-developer/opera_sandbox" ]]; then
+        chmod 4755 \
+            "$pkgdir/usr/lib/opera-developer/opera_sandbox"
+    fi
+
+# Defaults
+
+    install -Dm644 "$srcdir/default" \
+        "$pkgdir/etc/opera-developer/default"
+
+# Launcher
+
+    local upstream_binary
+
+    upstream_binary="$(find "$pkgdir/usr/lib/opera-developer" \
+        -maxdepth 1 \
+        -type f \
+        \( -name 'opera-developer' -o -name 'opera' \) \
+        | head -n1)"
+
+    if [[ -z "$upstream_binary" ]]; then
+        echo 'ERROR: upstream Opera executable not found'
+        return 1
+    fi
+
+    rm -f "$pkgdir/usr/bin/opera-developer"
+
+    install -Dm755 "$srcdir/opera" \
+        "$pkgdir/usr/bin/opera-developer"
+
+# Desktop entries
+
+    local desktop_dir="$pkgdir/usr/share/applications"
+
+    if [[ -d "$desktop_dir" ]]; then
+        find "$desktop_dir" \
+            -maxdepth 1 \
+            -type f \
+            -name '*.desktop' \
+            -print0 |
+        while IFS= read -r -d '' desktop_file; do
+            if grep -qi 'opera' "$desktop_file"; then
+                sed -i \
+                    -e 's|^Exec=.*|Exec=opera-developer %U|' \
+                    -e 's|^TryExec=.*|TryExec=opera-developer|' \
+                    "$desktop_file"
+            fi
+        done
+    fi
+
+
+# License
+
+    local copyright_file
+
+    copyright_file="$(find "$pkgdir/usr/share/doc" \
+        -type f \
+        -name copyright \
+        | head -n1)"
+
+    if [[ -n "$copyright_file" ]]; then
+        install -Dm644 "$copyright_file" \
+            "$pkgdir/usr/share/licenses/$pkgname/copyright"
+    fi
 }
