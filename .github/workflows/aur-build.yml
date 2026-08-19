@@ -50,7 +50,7 @@ jobs:
             archlinux:latest \
             bash -euo pipefail -c '
               pacman -Syu --noconfirm
-              pacman -S --needed --noconfirm base-devel git sudo
+              pacman -S --needed --noconfirm base-devel git sudo tar
 
               useradd --create-home builder
               # makepkg --syncdeps installs missing package dependencies through
