@@ -92,7 +92,21 @@ package() {
 
     bsdtar -xf "$_debfile"
 
-    bsdtar -xf data.tar.xz \
+    # Debian packages may use xz, zstd, or another supported compressor for
+    # their data member. Do not assume the historical data.tar.xz name.
+    local data_archive
+    data_archive="$(find "$srcdir" \
+        -maxdepth 1 \
+        -type f \
+        -name 'data.tar.*' \
+        -print -quit)"
+
+    if [[ -z "$data_archive" ]]; then
+        echo "ERROR: data archive not found in $_debfile"
+        return 1
+    fi
+
+    bsdtar -xf "$data_archive" \
         --exclude='usr/share/lintian' \
         --exclude='usr/share/menu' \
         -C "$pkgdir"
